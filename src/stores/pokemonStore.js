@@ -1,238 +1,632 @@
 /**
- * @file Magasin Pinia connecté à l’API Pokédex.
- * Remplace la version locale (localStorage + tableau en dur) par des appels HTTP.
- * Objectif pédagogique : montrer comment structurer un store simple, séparer l’instance Axios,
- * et gérer les états de chargement + erreurs de façon basique.
+ * @file Gestionnaire de magasin pour les données des Pokémon.
+ * Utilise Pinia pour gérer les types de Pokémon, la liste des Pokémon,
+ * les opérations CRUD (Create, Read, Update, Delete) et les favoris.
+ * Communique avec une API backend pour persister les données.
+ * @version 2.0
+ * @since 2024-09-22
  */
 
 import { defineStore } from 'pinia'
-import axios from 'axios'
+import api from '@/plugins/axios'
+import { useAuthStore } from './authStore'
 
 /**
- * Instance Axios centralisée.
- * Avantage : on définit la baseURL une seule fois et on peut injecter facilement des en-têtes (ex. Authorization).
- * VITE_API_URL peut valoir "http://localhost:3535" ou "/api" si vous utilisez un proxy Vite.
+ * Client Axios partagé configuré dans `src/plugins/axios.js`.
+ * Les en-têtes (dont Authorization) sont gérés globalement par le store d'authentification.
  */
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'http://localhost:3535',
-  headers: { 'Accept-Language': 'fr' },
-})
 
+/**
+ * Magasin Pinia pour gérer toutes les données relatives aux Pokémon.
+ * Ce magasin s'occupe uniquement de tout ce qui concerne les Pokémon :
+ * - Charger la liste des Pokémon depuis l'API
+ * - Ajouter, modifier, supprimer des Pokémon
+ * - Gérer les types de Pokémon
+ * - Gérer les favoris (stockage local)
+ * - Sélectionner un Pokémon pour affichage détaillé
+ */
 export const usePokemonStore = defineStore('pokemon', {
   /**
-   * État du store.
-   * isLoading : drapeau simple pour bloquer l’UI pendant une requête.
-   * types/pokemons : jeux de données récupérés via l’API.
-   * selectedPokemon : élément mis en avant pour une page de détail.
-   * favorites : liste d’IDs stockée localement (localStorage) côté front.
-   * token : jeton d’authentification si votre API protège certaines routes (facultatif en démo).
+   * État initial du magasin Pokémon.
+   * Ces données représentent toutes les informations sur les Pokémon gérées par l'app.
    */
   state: () => ({
+    /**
+     * Indique si une opération de chargement est en cours.
+     * Permet d'afficher des spinners ou désactiver des boutons pendant les requêtes API.
+     * @type {boolean}
+     */
     isLoading: false,
+
+    /**
+     * Liste de tous les types de Pokémon disponibles.
+     * Chaque type contient un id, un nom, et une couleur pour l'affichage.
+     * Exemples : Feu, Eau, Plante, Électrique, etc.
+     * @type {Array<{id: number, name: string, color: string}>}
+     */
     types: [],
+
+    /**
+     * Liste de tous les Pokémon chargés depuis l'API.
+     * Chaque Pokémon contient ses informations complètes : nom, types, niveau, stats, etc.
+     * @type {Array<Object>}
+     */
     pokemons: [],
+
+    /**
+     * Le Pokémon actuellement sélectionné pour affichage détaillé.
+     * Utilisé pour les pages de détail d'un Pokémon spécifique.
+     * Vaut `null` si aucun Pokémon n'est sélectionné.
+     * @type {Object|null}
+     */
     selectedPokemon: null,
+
+    /**
+     * Liste des identifiants des Pokémon marqués comme favoris par l'utilisateur.
+     * Ces favoris sont stockés localement dans le navigateur (localStorage).
+     * On ne stocke que les IDs pour économiser l'espace et éviter les doublons.
+     * @type {Array<string>}
+     */
     favorites: [],
-    token: null,
   }),
 
   /**
-   * Getters = propriétés calculées du store.
-   * But : éviter de répéter des .find(...) dans vos composants.
+   * Getters : propriétés calculées basées sur l'état du magasin.
+   * Ces fonctions permettent d'accéder facilement à des données dérivées.
    */
   getters: {
-    /** Nombre de favoris (utile pour un badge ou un compteur dans le header) */
-    favoritesCount: s => s.favorites.length,
-
-    /** L’utilisateur est-il connecté ? Ici, on considère que la présence d’un token suffit. */
-    isAuthenticated: s => !!s.token,
-
-    /** Récupère un type par son id. Retourne undefined si non trouvé. */
-    getTypeById: s => id => s.types.find(t => t.id === id),
-
-    /** Récupère un Pokémon par son id. Retourne undefined si non trouvé. */
-    getPokemonById: s => id => s.pokemons.find(p => p.id === id),
-
-    /** Le Pokémon passé en paramètre est-il dans les favoris ? */
-    isFavorite: s => pokemon => s.favorites.some(favId => favId === pokemon.id),
+    /**
+     * Compte le nombre total de Pokémon chargés.
+     * Utile pour afficher des statistiques ou des compteurs dans l'interface.
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {number} Le nombre total de Pokémon dans la liste
+     */
+    totalPokemons: state => {
+      return state.pokemons.length
+    },
 
     /**
-     * Reconstruit la liste d’objets favoris depuis leurs IDs.
-     * .filter(Boolean) supprime les trous si un favori n’existe plus dans pokemons.
+     * Compte le nombre total de favoris.
+     * Pratique pour afficher un badge avec le nombre de favoris dans l'interface.
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {number} Le nombre de Pokémon favoris
      */
-    getFavorites: s => s.favorites.map(id => s.pokemons.find(p => p.id === id)).filter(Boolean),
+    totalFavorites: state => {
+      return state.favorites.length
+    },
 
-    /** Nombre total de Pokémon chargés depuis l’API */
-    totalPokemons: s => s.pokemons.length,
+    /**
+     * Vérifie si l'utilisateur est authentifié.
+     * Utilise le store d'authentification pour cette vérification.
+     * Pratique pour afficher/masquer certaines fonctionnalités selon l'état de connexion.
+     * @returns {boolean} `true` si l'utilisateur est connecté, `false` sinon
+     */
+    isAuthenticated () {
+      const authStore = useAuthStore()
+      return authStore.isAuthenticated
+    },
 
-    /** Nombre total de favoris */
-    totalFavorites: s => s.favorites.length,
+    /**
+     * Trouve un type de Pokémon par son identifiant.
+     * Évite de réécrire la logique de recherche dans chaque composant.
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {function(number): Object|undefined} Fonction qui prend un ID et retourne le type correspondant
+     */
+    getTypeById: state => {
+      return typeId => {
+        return state.types.find(type => type.id === typeId)
+      }
+    },
+
+    /**
+     * Trouve un Pokémon par son identifiant.
+     * Très utile pour récupérer les détails d'un Pokémon spécifique.
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {function(string): Object|undefined} Fonction qui prend un ID et retourne le Pokémon correspondant
+     */
+    getPokemonById: state => {
+      return pokemonId => {
+        return state.pokemons.find(pokemon => pokemon.id === pokemonId)
+      }
+    },
+
+    /**
+     * Vérifie si un Pokémon donné est dans les favoris.
+     * Permet d'afficher différemment les Pokémon favoris dans l'interface (cœur rouge, etc.).
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {function(Object): boolean} Fonction qui prend un Pokémon et retourne `true` s'il est favori
+     */
+    isFavorite: state => {
+      return pokemon => {
+        return state.favorites.includes(pokemon.id)
+      }
+    },
+
+    /**
+     * Récupère la liste complète des objets Pokémon favoris.
+     * Transforme la liste d'IDs de favoris en liste d'objets Pokémon complets.
+     * Filtre automatiquement les favoris qui n'existent plus.
+     * @param {Object} state - L'état actuel du magasin
+     * @returns {Array<Object>} Liste des Pokémon favoris (objets complets)
+     */
+    getFavorites: state => {
+      // On parcourt la liste des IDs favoris
+      const favoritePokemons = state.favorites.map(favoriteId => {
+        // Pour chaque ID, on cherche le Pokémon correspondant
+        return state.pokemons.find(pokemon => pokemon.id === favoriteId)
+      })
+
+      // On filtre pour éliminer les undefined (favoris qui n'existent plus)
+      return favoritePokemons.filter(pokemon => pokemon !== undefined)
+    },
   },
 
+  /**
+   * Actions : méthodes qui peuvent modifier l'état du magasin.
+   * Toute la logique métier concernant les Pokémon se trouve ici.
+   */
   actions: {
     /**
-     * Synchronise l’en-tête Authorization de l’instance Axios avec le token du store.
-     * À appeler après login() et logout().
+     * Initialise le store Pokémon au démarrage de l'application.
+     * Cette méthode doit être appelée une seule fois dans main.js.
+     *
+     * ÉTAPES DE CETTE MÉTHODE :
+     * 1. Charger les favoris depuis le localStorage
+     * 2. Afficher un message de confirmation
      */
-    _applyAuthHeader () {
-      if (this.token) {
-        api.defaults.headers.common.Authorization = `Bearer ${this.token}`
-      } else {
-        delete api.defaults.headers.common.Authorization
-      }
+    async init () {
+      console.log('🚀 Initialisation du store Pokémon...')
+
+      // Charger les types de Pokémons
+      await this.fetchTypes()
+      // Charger les Pokémons
+      await this.fetchPokemons()
+      // Charger les favoris sauvegardés dans le navigateur
+      this.loadFavorites()
+
+      console.log('✅ Store Pokémon initialisé')
+      console.log('ℹ️ Les requêtes utiliseront automatiquement le token du store auth')
     },
 
     /**
-     * Authentification basique.
-     * Selon votre API, changez le body { username, password } en { email, password } ou autre.
-     * L’API de démo renvoie typiquement { token }.
-     */
-    async login (username, password) {
-      this.isLoading = true
-      try {
-        const { data } = await api.post('/login', { username, password })
-        // On essaye d’être tolérant sur la forme de la réponse : data.token ou data.data.token
-        this.token = data?.token ?? data?.data?.token ?? null
-        this._applyAuthHeader()
-        return { success: true, message: 'Connexion réussie' }
-      } catch (e) {
-        // En démo, on reste simple : on n’expose pas les détails techniques à l’étudiant
-        return { success: false, message: 'Identifiants invalides' }
-      } finally {
-        this.isLoading = false
-      }
-    },
-
-    /** Déconnexion : on supprime le token et on nettoie l’en-tête Authorization */
-    logout () {
-      this.token = null
-      this._applyAuthHeader()
-    },
-
-    /**
-     * Charge tous les types depuis l’API.
-     * Route attendue côté serveur : GET /types
-     * La forme de réponse peut varier. On accepte soit { data: [...] } soit directement [...].
+     * Charge tous les types de Pokémon depuis l'API.
+     * Les types sont utilisés pour catégoriser les Pokémon (Feu, Eau, Plante, etc.).
+     *
+     * ÉTAPES DE CETTE MÉTHODE :
+     * 1. Activer l'indicateur de chargement
+     * 2. Faire la requête GET vers l'API
+     * 3. Stocker les types reçus dans le state
+     * 4. Gérer les erreurs éventuelles
+     * 5. Désactiver l'indicateur de chargement
+     *
+     * @returns {Promise<void>}
      */
     async fetchTypes () {
+      console.log('📥 Chargement des types de Pokémon depuis l\'API...')
+
+      // ÉTAPE 1 : Activer l'indicateur de chargement
       this.isLoading = true
+
       try {
-        const { data } = await api.get('/types')
-        this.types = data?.data ?? data ?? []
-      } catch (e) {
-        console.error('Erreur chargement types:', e)
+        // ÉTAPE 2 : Requête GET vers l'API
+        // Le token d'authentification est automatiquement ajouté par la configuration d'Axios
+        const response = await api.get('/types')
+
+        // ÉTAPE 3 : Traitement de la réponse
+        // L'API peut retourner les données dans différents formats, on s'adapte
+        if (response.data && response.data.data) {
+          // Format : { data: [...] }
+          this.types = response.data.data
+        } else if (response.data) {
+          // Format direct : [...]
+          this.types = response.data
+        } else {
+          // Format inattendu, on met un tableau vide
+          this.types = []
+        }
+
+        console.log('✅ Types de Pokémon chargés:', this.types.length, 'éléments')
+      } catch (error) {
+        // ÉTAPE 4 : Gestion des erreurs
+        console.error('❌ Erreur lors du chargement des types:', error.message)
+
+        // En cas d'erreur, on met un tableau vide pour éviter les plantages
         this.types = []
+
+        // Afficher une erreur plus détaillée si disponible
+        if (error.response) {
+          console.error('   Détail de l\'erreur serveur:', error.response.status, error.response.data)
+        }
       } finally {
+        // ÉTAPE 5 : Désactiver l'indicateur de chargement dans tous les cas
         this.isLoading = false
       }
     },
 
     /**
-     * Charge tous les pokémons depuis l’API.
-     * Route attendue : GET /pokemons
+     * Charge tous les Pokémon depuis l'API.
+     * Récupère la liste complète des Pokémon avec leurs informations détaillées.
+     *
+     * ÉTAPES DE CETTE MÉTHODE :
+     * 1. Vérifier que l'utilisateur est connecté
+     * 2. Activer l'indicateur de chargement
+     * 3. Faire la requête GET vers l'API
+     * 4. Stocker les Pokémon reçus dans le state
+     * 5. Nettoyer les favoris obsolètes
+     * 6. Gérer les erreurs éventuelles
+     * 7. Désactiver l'indicateur de chargement
+     *
+     * @returns {Promise<void>}
      */
     async fetchPokemons () {
+      console.log('📥 Chargement des Pokémon depuis l\'API...')
+
+      // ÉTAPE 1 : Vérification de l'authentification
+      const authStore = useAuthStore()
+      if (!authStore.isAuthenticated) {
+        console.warn('⚠️ Utilisateur non connecté - impossible de charger les Pokémon')
+        return
+      }
+
+      // ÉTAPE 2 : Activer l'indicateur de chargement
       this.isLoading = true
+
       try {
-        const { data } = await api.get('/pokemons')
-        this.pokemons = data?.data ?? data ?? []
-      } catch (e) {
-        console.error('Erreur chargement pokémons:', e)
+        // ÉTAPE 3 : Requête GET vers l'API
+        // Le token est automatiquement ajouté grâce à la configuration d'Axios dans le store auth
+        const response = await api.get('/pokemons')
+
+        // ÉTAPE 4 : Traitement de la réponse
+        if (response.data && response.data.data) {
+          this.pokemons = response.data.data
+        } else if (response.data) {
+          this.pokemons = response.data
+        } else {
+          this.pokemons = []
+        }
+
+        console.log('✅ Pokémon chargés:', this.pokemons.length, 'éléments')
+
+        // ÉTAPE 5 : Nettoyer les favoris qui ne correspondent plus à des Pokémon existants
+        this.cleanupFavorites()
+      } catch (error) {
+        // ÉTAPE 6 : Gestion des erreurs
+        console.error('❌ Erreur lors du chargement des Pokémon:', error.message)
+
         this.pokemons = []
+
+        if (error.response) {
+          console.error('   Détail de l\'erreur serveur:', error.response.status, error.response.data)
+
+          // Erreur 401 = token expiré ou invalide
+          if (error.response.status === 401) {
+            console.warn('🔐 Token probablement expiré - veuillez vous reconnecter')
+          }
+        }
       } finally {
+        // ÉTAPE 7 : Désactiver l'indicateur de chargement dans tous les cas
         this.isLoading = false
       }
     },
 
     /**
-     * Création d’un Pokémon.
-     * Route attendue : POST /pokemons  avec le body { name, level, types, ... }
-     * On repousse la validation au serveur pour simplifier le front des débutants.
+     * Ajoute un nouveau Pokémon via l'API.
+     *
+     * ÉTAPES DE CETTE MÉTHODE :
+     * 1. Vérifier que l'utilisateur est connecté
+     * 2. Valider les données du Pokémon
+     * 3. Activer l'indicateur de chargement
+     * 4. Envoyer la requête POST à l'API
+     * 5. Ajouter le nouveau Pokémon à la liste locale
+     * 6. Retourner le résultat de l'opération
+     *
+     * @param {Object} pokemonData - Les données du Pokémon à créer
+     * @param {string} pokemonData.name - Le nom du Pokémon
+     * @param {number} pokemonData.level - Le niveau du Pokémon
+     * @param {Array<number>} pokemonData.types - Les IDs des types du Pokémon
+     * @returns {Promise<Object>} Objet avec `success` (boolean) et `message` (string)
      */
-    async createPokemon (payload) {
+    async addPokemon (pokemonData) {
+      console.log('➕ Tentative d\'ajout d\'un nouveau Pokémon:', pokemonData)
+
+      // ÉTAPE 1 : Vérification de l'authentification
+      const authStore = useAuthStore()
+      if (!authStore.isAuthenticated) {
+        const errorMessage = 'Vous devez être connecté pour ajouter un Pokémon'
+        console.error('❌', errorMessage)
+        return {
+          success: false,
+          message: errorMessage,
+        }
+      }
+
+      // ÉTAPE 2 : Validation basique des données
+      if (!pokemonData.name || !pokemonData.level) {
+        const errorMessage = 'Le nom et le niveau du Pokémon sont obligatoires'
+        console.error('❌', errorMessage)
+        return {
+          success: false,
+          message: errorMessage,
+        }
+      }
+
+      // ÉTAPE 3 : Activer l'indicateur de chargement
       this.isLoading = true
+
       try {
-        const { data } = await api.post('/pokemons', payload)
-        // On ajoute l’élément créé à la liste locale pour réactivité immédiate.
-        const created = data?.data ?? data
-        if (created) this.pokemons.push(created)
-        return { success: true, message: 'Pokémon créé' }
-      } catch (e) {
-        // On récupère un message d’erreur si le back en fournit un.
-        const msg = e.response?.data?.message ||
-          e.response?.data?.errors?.[0]?.message ||
-          'Erreur lors de la création'
-        return { success: false, message: msg }
+        // ÉTAPE 4 : Envoyer les données à l'API
+        const response = await api.post('/pokemons', pokemonData)
+
+        // ÉTAPE 5 : Récupérer le Pokémon créé depuis la réponse
+        let newPokemon = null
+        if (response.data && response.data.data) {
+          newPokemon = response.data.data
+        } else if (response.data) {
+          newPokemon = response.data
+        }
+
+        // ÉTAPE 6 : Ajouter le nouveau Pokémon à la liste locale
+        if (newPokemon) {
+          this.pokemons.push(newPokemon)
+          console.log('✅ Pokémon créé avec succès:', newPokemon.name)
+        }
+
+        return {
+          success: true,
+          message: 'Pokémon ajouté avec succès !',
+        }
+      } catch (error) {
+        // Gestion des erreurs
+        console.error('❌ Erreur lors de l\'ajout du Pokémon:', error.message)
+
+        let errorMessage = 'Erreur lors de l\'ajout du Pokémon'
+
+        if (error.response) {
+          // Essayer de récupérer un message d'erreur précis depuis l'API
+          if (error.response.data && error.response.data.message) {
+            errorMessage = error.response.data.message
+          } else if (error.response.data && error.response.data.errors && error.response.data.errors.length > 0) {
+            errorMessage = error.response.data.errors[0].message
+          }
+
+          // Gestion spéciale pour les erreurs d'authentification
+          if (error.response.status === 401) {
+            errorMessage = 'Session expirée. Veuillez vous reconnecter.'
+          }
+        }
+
+        return {
+          success: false,
+          message: errorMessage,
+        }
       } finally {
+        // ÉTAPE 7 : Désactiver l'indicateur de chargement dans tous les cas
         this.isLoading = false
       }
     },
 
     /**
-     * Modification d’un Pokémon par son id.
-     * Route attendue : PUT /pokemons/:id
+     * Met à jour un Pokémon existant via l'API.
+     *
+     * @param {string} pokemonId - L'identifiant du Pokémon à modifier
+     * @param {Object} updatedData - Les nouvelles données du Pokémon
+     * @returns {Promise<Object>} Objet avec `success` (boolean) et `message` (string)
      */
-    async updatePokemon (id, payload) {
+    async updatePokemon (pokemonId, updatedData) {
+      console.log('✏️ Modification du Pokémon', pokemonId, 'avec:', updatedData)
+
       this.isLoading = true
+
       try {
-        const { data } = await api.put(`/pokemons/${id}`, payload)
-        const updated = data?.data ?? data
-        // Mise à jour optimiste de la liste locale
-        const i = this.pokemons.findIndex(p => p.id === id)
-        if (i !== -1 && updated) this.pokemons[i] = { ...this.pokemons[i], ...updated }
-        return { success: true, message: 'Pokémon modifié' }
-      } catch (e) {
-        const msg = e.response?.data?.message ||
-          e.response?.data?.errors?.[0]?.message ||
-          'Erreur lors de la modification'
-        return { success: false, message: msg }
+        // Envoyer les modifications à l'API
+        const response = await api.put(`/pokemons/${pokemonId}`, updatedData)
+
+        // Récupérer les données mises à jour
+        let updatedPokemon = null
+        if (response.data && response.data.data) {
+          updatedPokemon = response.data.data
+        } else if (response.data) {
+          updatedPokemon = response.data
+        }
+
+        // Mettre à jour le Pokémon dans la liste locale
+        if (updatedPokemon) {
+          const pokemonIndex = this.pokemons.findIndex(pokemon => pokemon.id === pokemonId)
+          if (pokemonIndex !== -1) {
+            // Fusionner les anciennes données avec les nouvelles
+            this.pokemons[pokemonIndex] = { ...this.pokemons[pokemonIndex], ...updatedPokemon }
+            console.log('✅ Pokémon modifié avec succès')
+          }
+        }
+
+        return {
+          success: true,
+          message: 'Pokémon modifié avec succès !',
+        }
+      } catch (error) {
+        console.error('❌ Erreur lors de la modification du Pokémon:', error.message)
+
+        let errorMessage = 'Erreur lors de la modification du Pokémon'
+        if (error.response && error.response.data && error.response.data.message) {
+          errorMessage = error.response.data.message
+        }
+
+        return {
+          success: false,
+          message: errorMessage,
+        }
       } finally {
         this.isLoading = false
       }
     },
 
     /**
-     * Suppression d’un Pokémon par son id.
-     * Route attendue : DELETE /pokemons/:id
-     * On retire aussi l’élément des favoris s’il y était.
+     * Supprime un Pokémon via l'API.
+     * Supprime également le Pokémon des favoris s'il y était.
+     *
+     * @param {string} pokemonId - L'identifiant du Pokémon à supprimer
+     * @returns {Promise<Object>} Objet avec `success` (boolean) et `message` (string)
      */
-    async deletePokemon (id) {
+    async deletePokemon (pokemonId) {
+      console.log('🗑️ Suppression du Pokémon', pokemonId)
+
       this.isLoading = true
+
       try {
-        await api.delete(`/pokemons/${id}`)
-        this.pokemons = this.pokemons.filter(p => p.id !== id)
-        this.favorites = this.favorites.filter(fid => fid !== id)
-        return { success: true, message: 'Pokémon supprimé' }
-      } catch {
-        return { success: false, message: 'Suppression impossible' }
+        // Supprimer le Pokémon via l'API
+        await api.delete(`/pokemons/${pokemonId}`)
+
+        // Supprimer le Pokémon de la liste locale
+        this.pokemons = this.pokemons.filter(pokemon => pokemon.id !== pokemonId)
+
+        // Supprimer le Pokémon des favoris s'il y était
+        this.favorites = this.favorites.filter(favoriteId => favoriteId !== pokemonId)
+        this.saveFavorites()
+
+        console.log('✅ Pokémon supprimé avec succès')
+
+        return {
+          success: true,
+          message: 'Pokémon supprimé avec succès !',
+        }
+      } catch (error) {
+        console.error('❌ Erreur lors de la suppression du Pokémon:', error.message)
+
+        return {
+          success: false,
+          message: 'Erreur lors de la suppression du Pokémon',
+        }
       } finally {
         this.isLoading = false
       }
     },
 
-    /** Sélectionne un Pokémon pour l’affichage d’une page de détail */
-    selectPokemon (id) {
-      this.selectedPokemon = this.pokemons.find(p => p.id === id) || null
+    /**
+     * Sélectionne un Pokémon pour l'affichage détaillé.
+     * Utile pour les pages de détail d'un Pokémon.
+     *
+     * @param {string} pokemonId - L'identifiant du Pokémon à sélectionner
+     */
+    selectPokemon (pokemonId) {
+      // Chercher le Pokémon dans la liste
+      const pokemon = this.pokemons.find(p => p.id === pokemonId)
+
+      if (pokemon) {
+        this.selectedPokemon = pokemon
+        console.log('👆 Pokémon sélectionné:', pokemon.name)
+      } else {
+        this.selectedPokemon = null
+        console.log('👆 Pokémon non trouvé pour l\'ID:', pokemonId)
+      }
     },
 
     /**
-     * Charge les favoris depuis le localStorage et nettoie les IDs orphelins
-     * (cas typique si on a vidé la base côté back entre deux sessions).
+     * Charge les favoris depuis le stockage local du navigateur (localStorage).
+     * Cette méthode est appelée au démarrage pour restaurer les favoris précédents.
      */
     loadFavorites () {
-      this.favorites = JSON.parse(localStorage.getItem('favorites')) || []
-      this.favorites = this.favorites.filter(id => this.pokemons.some(p => p.id === id))
+      try {
+        // Récupérer les favoris depuis localStorage
+        const savedFavorites = localStorage.getItem('pokemon_favorites')
+
+        if (savedFavorites) {
+          // Parser le JSON et stocker dans le state
+          this.favorites = JSON.parse(savedFavorites)
+          console.log('💾 Favoris chargés depuis le navigateur:', this.favorites.length, 'éléments')
+        } else {
+          // Pas de favoris sauvegardés, initialiser un tableau vide
+          this.favorites = []
+          console.log('💾 Aucun favori sauvegardé trouvé')
+        }
+      } catch (error) {
+        // En cas d'erreur (données corrompues), réinitialiser
+        console.error('❌ Erreur lors du chargement des favoris:', error)
+        this.favorites = []
+      }
     },
 
     /**
-     * Ajoute/retire un favori.
-     * On stocke uniquement l’ID pour réduire la taille du localStorage et éviter les doublons de données.
+     * Sauvegarde les favoris dans le stockage local du navigateur.
+     * Appelée automatiquement chaque fois que la liste des favoris change.
+     */
+    saveFavorites () {
+      try {
+        // Convertir la liste en JSON et sauvegarder
+        localStorage.setItem('pokemon_favorites', JSON.stringify(this.favorites))
+        console.log('💾 Favoris sauvegardés dans le navigateur')
+      } catch (error) {
+        console.error('❌ Erreur lors de la sauvegarde des favoris:', error)
+      }
+    },
+
+    /**
+     * Nettoie les favoris en supprimant les IDs qui ne correspondent plus à des Pokémon existants.
+     * Appelée automatiquement après le chargement des Pokémon.
+     */
+    cleanupFavorites () {
+      const initialCount = this.favorites.length
+
+      // Filtrer pour ne garder que les IDs qui correspondent à des Pokémon existants
+      this.favorites = this.favorites.filter(favoriteId => {
+        return this.pokemons.some(pokemon => pokemon.id === favoriteId)
+      })
+
+      const removedCount = initialCount - this.favorites.length
+
+      if (removedCount > 0) {
+        console.log('🧹 Nettoyage des favoris:', removedCount, 'favoris obsolètes supprimés')
+        this.saveFavorites()
+      }
+    },
+
+    /**
+     * Ajoute ou retire un Pokémon des favoris.
+     * Si le Pokémon est déjà favori, on le retire. Sinon, on l'ajoute.
+     *
+     * @param {Object} pokemon - Le Pokémon à ajouter ou retirer des favoris
      */
     toggleFavorite (pokemon) {
-      const i = this.favorites.findIndex(f => f === pokemon.id)
-      if (i === -1) this.favorites.push(pokemon.id)
-      else this.favorites.splice(i, 1)
-      localStorage.setItem('favorites', JSON.stringify(this.favorites))
+      // Chercher si ce Pokémon est déjà dans les favoris
+      const favoriteIndex = this.favorites.findIndex(favoriteId => favoriteId === pokemon.id)
+
+      if (favoriteIndex === -1) {
+        // Le Pokémon n'est pas favori, on l'ajoute
+        this.favorites.push(pokemon.id)
+        console.log('❤️ Pokémon ajouté aux favoris:', pokemon.name)
+      } else {
+        // Le Pokémon est déjà favori, on le retire
+        this.favorites.splice(favoriteIndex, 1)
+        console.log('💔 Pokémon retiré des favoris:', pokemon.name)
+      }
+
+      // Sauvegarder les changements dans le navigateur
+      this.saveFavorites()
+    },
+
+    /**
+     * Méthode utilitaire pour déboguer l'état du store Pokémon.
+     * Affiche toutes les informations importantes dans la console du navigateur.
+     *
+     * Usage : pokemonStore.debugPokemon() dans la console ou dans le code
+     */
+    debugPokemon () {
+      console.log('🐛 ===== DEBUG STORE POKÉMON =====')
+      console.log('📊 Pokémon chargés:', this.pokemons.length)
+      console.log('🏷️ Types chargés:', this.types.length)
+      console.log('❤️ Favoris:', this.favorites.length)
+      console.log('👆 Pokémon sélectionné:', this.selectedPokemon?.name || 'aucun')
+      console.log('⏳ Chargement en cours:', this.isLoading)
+      console.log('🔐 Utilisateur authentifié:', this.isAuthenticated)
+
+      if (this.pokemons.length > 0) {
+        console.log('🔍 Premier Pokémon (exemple):', this.pokemons[0])
+      }
+
+      if (this.favorites.length > 0) {
+        console.log('🔍 IDs favoris:', this.favorites)
+      }
+
+      console.log('🐛 ==============================')
     },
   },
 })

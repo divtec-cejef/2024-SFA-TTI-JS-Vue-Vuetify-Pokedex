@@ -121,8 +121,9 @@
    * - Valide les informations d'identification via le store.
    * - Redirige l'utilisateur en cas de succès ou affiche un message d'erreur.
    */
-  function login () {
-    const response = authStore.login(loginEmail.value, loginPassword.value)
+  async function login () {
+    const response = await authStore.login(loginEmail.value, loginPassword.value)
+
     if (response.success) {
       // Redirection vers la page précédente ou l'accueil
       router.push(route.query.redirect || '/')

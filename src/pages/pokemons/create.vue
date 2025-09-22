@@ -189,11 +189,11 @@
    * Fonction pour ajouter un Pokémon
    * Utilise le magasin Pinia pour créer un Pokémon et gère les messages d'état.
    */
-  function addPokemon () {
+  async function addPokemon () {
     msgErreur.value = null
     msgSucces.value = false
 
-    const response = pokemonStore.addPokemon(pokemonData.value)
+    const response = await pokemonStore.addPokemon(pokemonData.value)
 
     if (!response.success) {
       msgErreur.value = response.message

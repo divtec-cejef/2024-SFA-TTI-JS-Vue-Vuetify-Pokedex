@@ -8,6 +8,7 @@
  */
 
 import { defineStore } from 'pinia'
+import { setAuthToken } from '@/plugins/axios'
 
 /**
  * Données factices utilisées pour simuler l'authentification.
@@ -53,6 +54,7 @@ export const useAuthStore = defineStore('auth', {
         // Mise à jour de l'état en cas de succès.
         this.user = utilisateurFactice
         this.token = tokenFactice
+        setAuthToken(this.token)
         // Stockage du jeton d'authentification dans le stockage local.
         localStorage.setItem('token', this.token)
         return {
@@ -63,6 +65,7 @@ export const useAuthStore = defineStore('auth', {
         // Réinitialisation de l'état en cas d'échec.
         this.user = null
         this.token = null
+        setAuthToken(null)
         // Suppression du jeton d'authentification du stockage local.
         localStorage.removeItem('token')
         return {
@@ -80,6 +83,7 @@ export const useAuthStore = defineStore('auth', {
     logout () {
       this.user = null
       this.token = null
+      setAuthToken(null)
       // Suppression du jeton d'authentification du stockage local.
       localStorage.removeItem('token')
       return {
@@ -97,6 +101,7 @@ export const useAuthStore = defineStore('auth', {
       if (token) {
         this.user = utilisateurFactice
         this.token = token
+        setAuthToken(token)
       }
     },
   },
