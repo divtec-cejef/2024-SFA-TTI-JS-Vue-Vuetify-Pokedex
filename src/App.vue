@@ -10,6 +10,7 @@
       * Inclut le composant personnalisé MenuPrincipal créer dans le fichier `src/components/AppHeader.vue`
     -->
     <menu-principal />
+
     <!--
     Section principale de l'application
       * <v-main> définit le conteneur principal pour afficher le contenu de l'application
@@ -28,7 +29,7 @@
         - class="w-100" : Assure que le conteneur occupe toute la largeur disponible.
     -->
     <v-footer>
-      <div class="px-4 text-center w-100">2025 - Pokedex</div>
+      <div class="px-4 text-center w-100">2024 - Pokedex</div>
     </v-footer>
   </v-app>
 </template>
@@ -36,4 +37,21 @@
 <script setup>
   // Importation du composant MenuPrincipal pour l'en-tête de l'application
   import MenuPrincipal from '@/components/AppHeader.vue'
+  // Importation du lifecycle hook `onMounted` pour exécuter du code après que le composant a été monté
+  import { onMounted } from 'vue'
+  // Importation des magasins d'état pour l'authentification et les Pokémon
+  import { useAuthStore } from '@/stores/authStore'
+  import { usePokemonStore } from '@/stores/pokemonStore'
+
+  // Actions à effectuer après le montage du composant (onMounted)
+  onMounted(async () => {
+    // Récupération du magasin d'Authentification
+    const authStore = useAuthStore()
+    // Récupération du token d'authentification depuis le localStorage
+    authStore.loadToken()
+
+    // Récupération du magasin des Pokémon
+    const pokemonStore = usePokemonStore()
+    await pokemonStore.init()
+  })
 </script>
