@@ -9,11 +9,11 @@
 
 import { defineStore } from 'pinia'
 import api from '@/plugins/axios'
-import { useAuthStore } from './authStore'
 
 /**
  * Client Axios partagé configuré dans `src/plugins/axios.js`.
- * Les en-têtes (dont Authorization) sont gérés globalement par le store d'authentification.
+ * Les en-têtes (dont Authorization) sont gérés globalement par
+ * le store d'authentification (src/stores/authStore.js).
  */
 
 /**
@@ -96,17 +96,6 @@ export const usePokemonStore = defineStore('pokemon', {
     },
 
     /**
-     * Vérifie si l'utilisateur est authentifié.
-     * Utilise le store d'authentification pour cette vérification.
-     * Pratique pour afficher/masquer certaines fonctionnalités selon l'état de connexion.
-     * @returns {boolean} `true` si l'utilisateur est connecté, `false` sinon
-     */
-    isAuthenticated () {
-      const authStore = useAuthStore()
-      return authStore.isAuthenticated
-    },
-
-    /**
      * Trouve un type de Pokémon par son identifiant.
      * Évite de réécrire la logique de recherche dans chaque composant.
      * @param {Object} state - L'état actuel du magasin
@@ -171,21 +160,32 @@ export const usePokemonStore = defineStore('pokemon', {
      * Cette méthode doit être appelée une seule fois dans main.js.
      *
      * ÉTAPES DE CETTE MÉTHODE :
-     * 1. Charger les favoris depuis le localStorage
-     * 2. Afficher un message de confirmation
+     * 1. Charger types et pokémons en parallèle
+     * 2. Restaurer les favoris depuis le localStorage
+     * 3. Afficher un message de confirmation
      */
     async init () {
       console.log('🚀 Initialisation du store Pokémon...')
 
-      // Charger les types de Pokémons
-      await this.fetchTypes()
-      // Charger les Pokémons
-      await this.fetchPokemons()
-      // Charger les favoris sauvegardés dans le navigateur
-      this.loadFavorites()
+      this.isLoading = true
 
-      console.log('✅ Store Pokémon initialisé')
-      console.log('ℹ️ Les requêtes utiliseront automatiquement le token du store auth')
+      try {
+        await Promise.all([
+          this.fetchTypes({ withLoader: false }),
+          this.fetchPokemons({ withLoader: false }),
+        ])
+
+        // Charger les favoris sauvegardés dans le navigateur
+        this.loadFavorites()
+
+        console.log('✅ Store Pokémon initialisé')
+      } catch (error) {
+        console.error('❌ Erreur lors de l\'initialisation du store Pokémon:', error)
+      } finally {
+        this.isLoading = false
+      }
+
+      console.log('ℹ️ Les requêtes utilisent maintenant la configuration axios globale')
     },
 
     /**
@@ -201,11 +201,11 @@ export const usePokemonStore = defineStore('pokemon', {
      *
      * @returns {Promise<void>}
      */
-    async fetchTypes () {
+    async fetchTypes ({ withLoader = true } = {}) {
       console.log('📥 Chargement des types de Pokémon depuis l\'API...')
 
       // ÉTAPE 1 : Activer l'indicateur de chargement
-      this.isLoading = true
+      if (withLoader) this.isLoading = true
 
       try {
         // ÉTAPE 2 : Requête GET vers l'API
@@ -239,7 +239,7 @@ export const usePokemonStore = defineStore('pokemon', {
         }
       } finally {
         // ÉTAPE 5 : Désactiver l'indicateur de chargement dans tous les cas
-        this.isLoading = false
+        if (withLoader) this.isLoading = false
       }
     },
 
@@ -248,35 +248,26 @@ export const usePokemonStore = defineStore('pokemon', {
      * Récupère la liste complète des Pokémon avec leurs informations détaillées.
      *
      * ÉTAPES DE CETTE MÉTHODE :
-     * 1. Vérifier que l'utilisateur est connecté
-     * 2. Activer l'indicateur de chargement
-     * 3. Faire la requête GET vers l'API
-     * 4. Stocker les Pokémon reçus dans le state
-     * 5. Nettoyer les favoris obsolètes
-     * 6. Gérer les erreurs éventuelles
-     * 7. Désactiver l'indicateur de chargement
+     * 1. Activer l'indicateur de chargement
+     * 2. Faire la requête GET vers l'API
+     * 3. Stocker les Pokémon reçus dans le state
+     * 4. Nettoyer les favoris obsolètes
+     * 5. Gérer les erreurs éventuelles
+     * 6. Désactiver l'indicateur de chargement
      *
      * @returns {Promise<void>}
      */
-    async fetchPokemons () {
+    async fetchPokemons ({ withLoader = true } = {}) {
       console.log('📥 Chargement des Pokémon depuis l\'API...')
 
-      // ÉTAPE 1 : Vérification de l'authentification
-      const authStore = useAuthStore()
-      if (!authStore.isAuthenticated) {
-        console.warn('⚠️ Utilisateur non connecté - impossible de charger les Pokémon')
-        return
-      }
-
-      // ÉTAPE 2 : Activer l'indicateur de chargement
-      this.isLoading = true
+      // ÉTAPE 1 : Activer l'indicateur de chargement
+      if (withLoader) this.isLoading = true
 
       try {
-        // ÉTAPE 3 : Requête GET vers l'API
-        // Le token est automatiquement ajouté grâce à la configuration d'Axios dans le store auth
+        // ÉTAPE 2 : Requête GET vers l'API
         const response = await api.get('/pokemons')
 
-        // ÉTAPE 4 : Traitement de la réponse
+        // ÉTAPE 3 : Traitement de la réponse
         if (response.data && response.data.data) {
           this.pokemons = response.data.data
         } else if (response.data) {
@@ -287,25 +278,20 @@ export const usePokemonStore = defineStore('pokemon', {
 
         console.log('✅ Pokémon chargés:', this.pokemons.length, 'éléments')
 
-        // ÉTAPE 5 : Nettoyer les favoris qui ne correspondent plus à des Pokémon existants
+        // ÉTAPE 4 : Nettoyer les favoris qui ne correspondent plus à des Pokémon existants
         this.cleanupFavorites()
       } catch (error) {
-        // ÉTAPE 6 : Gestion des erreurs
+        // ÉTAPE 5 : Gestion des erreurs
         console.error('❌ Erreur lors du chargement des Pokémon:', error.message)
 
         this.pokemons = []
 
         if (error.response) {
           console.error('   Détail de l\'erreur serveur:', error.response.status, error.response.data)
-
-          // Erreur 401 = token expiré ou invalide
-          if (error.response.status === 401) {
-            console.warn('🔐 Token probablement expiré - veuillez vous reconnecter')
-          }
         }
       } finally {
-        // ÉTAPE 7 : Désactiver l'indicateur de chargement dans tous les cas
-        this.isLoading = false
+        // ÉTAPE 6 : Désactiver l'indicateur de chargement dans tous les cas
+        if (withLoader) this.isLoading = false
       }
     },
 
@@ -313,12 +299,13 @@ export const usePokemonStore = defineStore('pokemon', {
      * Ajoute un nouveau Pokémon via l'API.
      *
      * ÉTAPES DE CETTE MÉTHODE :
-     * 1. Vérifier que l'utilisateur est connecté
-     * 2. Valider les données du Pokémon
-     * 3. Activer l'indicateur de chargement
-     * 4. Envoyer la requête POST à l'API
-     * 5. Ajouter le nouveau Pokémon à la liste locale
-     * 6. Retourner le résultat de l'opération
+     * 1. Valider les données du Pokémon
+     * 2. Activer l'indicateur de chargement
+     * 3. Envoyer la requête POST à l'API
+     * 4. Ajouter le nouveau Pokémon à la liste locale
+     * 5. Retourner le résultat de l'opération
+     * 6. Gérer les erreurs éventuelles
+     * 7. Désactiver l'indicateur de chargement
      *
      * @param {Object} pokemonData - Les données du Pokémon à créer
      * @param {string} pokemonData.name - Le nom du Pokémon
@@ -329,18 +316,7 @@ export const usePokemonStore = defineStore('pokemon', {
     async addPokemon (pokemonData) {
       console.log('➕ Tentative d\'ajout d\'un nouveau Pokémon:', pokemonData)
 
-      // ÉTAPE 1 : Vérification de l'authentification
-      const authStore = useAuthStore()
-      if (!authStore.isAuthenticated) {
-        const errorMessage = 'Vous devez être connecté pour ajouter un Pokémon'
-        console.error('❌', errorMessage)
-        return {
-          success: false,
-          message: errorMessage,
-        }
-      }
-
-      // ÉTAPE 2 : Validation basique des données
+      // ÉTAPE 1 : Validation basique des données
       if (!pokemonData.name || !pokemonData.level) {
         const errorMessage = 'Le nom et le niveau du Pokémon sont obligatoires'
         console.error('❌', errorMessage)
@@ -350,14 +326,14 @@ export const usePokemonStore = defineStore('pokemon', {
         }
       }
 
-      // ÉTAPE 3 : Activer l'indicateur de chargement
+      // ÉTAPE 2 : Activer l'indicateur de chargement
       this.isLoading = true
 
       try {
-        // ÉTAPE 4 : Envoyer les données à l'API
+        // ÉTAPE 3 : Envoyer les données à l'API
         const response = await api.post('/pokemons', pokemonData)
 
-        // ÉTAPE 5 : Récupérer le Pokémon créé depuis la réponse
+        // ÉTAPE 4 : Récupérer le Pokémon créé depuis la réponse
         let newPokemon = null
         if (response.data && response.data.data) {
           newPokemon = response.data.data
@@ -365,7 +341,7 @@ export const usePokemonStore = defineStore('pokemon', {
           newPokemon = response.data
         }
 
-        // ÉTAPE 6 : Ajouter le nouveau Pokémon à la liste locale
+        // ÉTAPE 5 : Ajouter le nouveau Pokémon à la liste locale
         if (newPokemon) {
           this.pokemons.push(newPokemon)
           console.log('✅ Pokémon créé avec succès:', newPokemon.name)
@@ -376,7 +352,7 @@ export const usePokemonStore = defineStore('pokemon', {
           message: 'Pokémon ajouté avec succès !',
         }
       } catch (error) {
-        // Gestion des erreurs
+        // ÉTAPE 6 : Gestion des erreurs
         console.error('❌ Erreur lors de l\'ajout du Pokémon:', error.message)
 
         let errorMessage = 'Erreur lors de l\'ajout du Pokémon'
@@ -387,11 +363,6 @@ export const usePokemonStore = defineStore('pokemon', {
             errorMessage = error.response.data.message
           } else if (error.response.data && error.response.data.errors && error.response.data.errors.length > 0) {
             errorMessage = error.response.data.errors[0].message
-          }
-
-          // Gestion spéciale pour les erreurs d'authentification
-          if (error.response.status === 401) {
-            errorMessage = 'Session expirée. Veuillez vous reconnecter.'
           }
         }
 
@@ -616,8 +587,6 @@ export const usePokemonStore = defineStore('pokemon', {
       console.log('❤️ Favoris:', this.favorites.length)
       console.log('👆 Pokémon sélectionné:', this.selectedPokemon?.name || 'aucun')
       console.log('⏳ Chargement en cours:', this.isLoading)
-      console.log('🔐 Utilisateur authentifié:', this.isAuthenticated)
-
       if (this.pokemons.length > 0) {
         console.log('🔍 Premier Pokémon (exemple):', this.pokemons[0])
       }
