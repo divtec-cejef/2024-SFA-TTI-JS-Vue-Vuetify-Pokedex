@@ -77,7 +77,7 @@ Le dossier principal qui contient tout le code source de l'application :
 - `stores/` : Gestion d’état avec **Pinia**.
   - `pokemons.js` : Gère la liste, les types et les favoris des Pokémon.
   - `authStore.js` : Simule un système d’authentification locale.
-- `plugins/` : Initialisation de Vuetify, Pinia et Vue Router. Le fichier `index.js` centralise l’enregistrement des plugins, `vuetify.js` contient la config Vuetify.
+- `plugins/` : Initialisation de Vuetify, Pinia et Vue Router. Le fichier `index.js` centralise l’enregistrement des plugins, `vuetify.js` contient la config Vuetify. `axios.js` contient la configuration d’Axios pour les appels API vers le serveur local.
 - `styles/` : Fichier `settings.scss` contenant les personnalisations SCSS pour Vuetify et les animations CSS.
 - `utils/` : Fonctions utilitaires comme `getImageUrl()` pour construire des chemins d’image.
 - `typed-router.d.ts` : Fichier généré automatiquement pour typer les routes (utile si vous activez TypeScript).
@@ -506,6 +506,39 @@ function ajouterFavori(pokemon) {
   pokemonStore.toggleFavorite(pokemon)
 }
 </script>
+```
+
+::: info
+Les données des Pokémons sont récupérées depuis une API locale à l'aide d'axios et stockées dans le store Pinia.
+:::
+
+```js
+async init () {
+    console.log('🚀 Initialisation du store Pokémon...')
+
+    this.isLoading = true
+
+    try {
+        // Les fonctions fetchTypes et fetchPokemons sont des actions définies dans le store
+        // Elles récupèrent les données depuis l'API et les stockent dans le state
+        await Promise.all([
+            this.fetchTypes({ withLoader: false }),
+            this.fetchPokemons({ withLoader: false }),
+        ])
+
+        // Charger les favoris sauvegardés dans le navigateur
+        this.loadFavorites()
+
+        console.log('✅ Store Pokémon initialisé')
+    } catch (error) {
+        console.error('❌ Erreur lors de l\'initialisation du store Pokémon:', error)
+    } finally {
+        this.isLoading = false
+    }
+
+    console.log('ℹ️ Les requêtes utilisent maintenant la configuration axios globale')
+},
+
 ```
 
 ---
