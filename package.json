@@ -8,6 +8,10 @@
     "lint": "eslint . --fix --ignore-path .gitignore"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.5",
+    "@capacitor/core": "^7.6.5",
+    "@capacitor/ios": "^7.6.5",
+    "@capacitor/status-bar": "^7.0.6",
     "@mdi/font": "7.4.47",
     "axios": "1.8.2",
     "core-js": "^3.37.1",
@@ -17,6 +21,7 @@
     "vuetify": "^3.6.11"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7.6.5",
     "@typescript-eslint/eslint-plugin": "^8.8.0",
     "@typescript-eslint/parser": "^8.8.0",
     "@vitejs/plugin-vue": "^5.0.5",

@@ -16,10 +16,14 @@
         * size="64" définit la taille de l'avatar
         * @click redirige vers la page d'accueil
       -->
+      <!--
+      Logo : taille réduite sur mobile pour libérer de l'espace au profit
+      du titre et du bouton login (cible 44pt = recommandation Apple HIG).
+      -->
       <v-avatar
         class="mr-4 pa-0 cursor-pointer"
         image="@/assets/pokeball.svg"
-        size="64"
+        :size="mobile ? 44 : 64"
         @click="$router.push('/')"
       />
 
@@ -35,6 +39,7 @@
       -->
       <v-btn
         v-for="link in menuItems"
+        v-show="!mobile"
         :key="link.title"
         :icon="link.icon"
         :to="link.path"
@@ -83,6 +88,11 @@
   import router from '@/router'
   import { useAuthStore } from '@/stores/authStore'
   import { ref } from 'vue'
+  import { useDisplay } from 'vuetify'
+
+  // useDisplay() expose `mobile` (true en dessous du breakpoint md).
+  // Sur mobile, les liens de navigation passent dans BottomNav.vue.
+  const { mobile } = useDisplay()
 
   // Utilisation du authStore pour gérer l'état de connexion de l'utilisateur
   const authStore = useAuthStore()

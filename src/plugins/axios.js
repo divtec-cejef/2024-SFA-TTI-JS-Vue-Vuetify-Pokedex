@@ -1,6 +1,9 @@
 import axios from 'axios'
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3535'
+// URL de l'API : Vercel par défaut (utilisable depuis le web ET les apps mobiles
+// iOS/Android compilées via Capacitor). Pour passer en local, définir
+// VITE_API_URL=http://localhost:3535 dans un fichier .env.local
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://2025-sfa-pokedex-api.vercel.app'
 
 axios.defaults.baseURL = API_BASE_URL
 axios.defaults.headers.common['Accept-Language'] = 'fr'
