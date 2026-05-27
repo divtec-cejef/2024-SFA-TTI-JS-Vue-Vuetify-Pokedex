@@ -28,30 +28,53 @@
         - class="text-center" : Centre le texte horizontalement.
         - class="w-100" : Assure que le conteneur occupe toute la largeur disponible.
     -->
-    <v-footer>
+    <!--
+    Pied de page : visible uniquement sur desktop. Sur mobile la place est
+    réservée à la BottomNav (navigation principale au pouce).
+    -->
+    <v-footer v-if="!mobile">
       <div class="px-4 text-center w-100">2024 - Pokedex</div>
     </v-footer>
+
+    <!--
+    Navigation inférieure mobile (Accueil / Favoris / Kanto / FAQ).
+    Le composant s'auto-masque sur desktop via useDisplay().
+    -->
+    <bottom-nav />
   </v-app>
 </template>
 
 <script setup>
-  // Importation du composant MenuPrincipal pour l'en-tête de l'application
   import MenuPrincipal from '@/components/AppHeader.vue'
-  // Importation du lifecycle hook `onMounted` pour exécuter du code après que le composant a été monté
+  import BottomNav from '@/components/BottomNav.vue'
   import { onMounted } from 'vue'
-  // Importation des magasins d'état pour l'authentification et les Pokémon
+  import { useDisplay } from 'vuetify'
   import { useAuthStore } from '@/stores/authStore'
   import { usePokemonStore } from '@/stores/pokemonStore'
+  import { Capacitor } from '@capacitor/core'
+  import { StatusBar, Style } from '@capacitor/status-bar'
 
-  // Actions à effectuer après le montage du composant (onMounted)
+  const { mobile } = useDisplay()
+
   onMounted(async () => {
-    // Récupération du magasin d'Authentification
     const authStore = useAuthStore()
-    // Récupération du token d'authentification depuis le localStorage
     authStore.loadToken()
 
-    // Récupération du magasin des Pokémon
     const pokemonStore = usePokemonStore()
     await pokemonStore.init()
+
+    // Configure la barre de statut native uniquement sur iOS/Android.
+    // Style.Dark = texte clair sur fond sombre (cohérent avec notre thème).
+    // L'appel est silencieux sur le web grâce au guard isNativePlatform().
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await StatusBar.setStyle({ style: Style.Dark })
+        if (Capacitor.getPlatform() === 'android') {
+          await StatusBar.setBackgroundColor({ color: '#1e1e1e' })
+        }
+      } catch (error) {
+        console.warn('StatusBar non disponible :', error)
+      }
+    }
   })
 </script>
