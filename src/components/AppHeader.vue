@@ -3,7 +3,12 @@
   Barre d'application plate
     * flat supprime l'ombre sous la barre
   -->
-  <v-app-bar flat>
+  <!--
+  v-app-bar avec respect des safe areas iOS (notch / Dynamic Island).
+  La classe .app-bar-safe ajoute le padding-top env(safe-area-inset-top)
+  pour que le contenu ne passe pas sous la barre de statut système.
+  -->
+  <v-app-bar class="app-bar-safe" flat>
     <!--
     Conteneur de la barre d'application
       * class="d-flex align-start align-center" aligne les éléments de manière flexible, alignés en haut et centrés verticalement
@@ -17,18 +22,27 @@
         * @click redirige vers la page d'accueil
       -->
       <!--
-      Logo : taille réduite sur mobile pour libérer de l'espace au profit
-      du titre et du bouton login (cible 44pt = recommandation Apple HIG).
+      Logo : icône pokéball Material Design (native, garantie visible
+      sur fond sombre, colorisable via le thème — contrairement à un
+      PNG dont la lisibilité dépend du fond).
+      Taille adaptée mobile (cible 44pt Apple HIG) vs desktop (64).
       -->
-      <v-avatar
-        class="mr-4 pa-0 cursor-pointer"
-        image="@/assets/pokeball.svg"
-        :size="mobile ? 44 : 64"
+      <v-btn
+        class="mr-4"
+        color="red"
+        :icon="mobile ? 'mdi-pokeball' : 'mdi-pokeball'"
+        :size="mobile ? 'large' : 'x-large'"
+        variant="text"
         @click="$router.push('/')"
       />
 
-      <!-- Titre de l'application affiché dans la barre -->
-      <v-toolbar-title>Pokedex</v-toolbar-title>
+      <!--
+      Titre "Pokedex" : visible uniquement sur desktop. Sur mobile,
+      le logo pokéball à gauche fait office d'identité visuelle —
+      ça libère de la place pour le bouton login et évite la collision
+      avec le notch / Dynamic Island iOS.
+      -->
+      <v-toolbar-title v-if="!mobile">Pokedex</v-toolbar-title>
 
       <!--
       Liens de navigation générés dynamiquement
@@ -126,3 +140,26 @@ Fonction de déconnexion
     router.push('/') // Rediriger l'utilisateur vers la page d'accueil
   }
 </script>
+
+<style scoped>
+/*
+Respect des safe areas iOS sur la barre d'application.
+
+Sans ce padding, le contenu du v-app-bar passe SOUS la zone du notch
+ou de la Dynamic Island sur iPhone, ce qui cache une partie du logo
+et rend les boutons partiellement inaccessibles.
+
+env(safe-area-inset-top) :
+  - vaut ~47px sur iPhone avec Dynamic Island
+  - vaut ~44px sur iPhone avec notch (X à 14)
+  - vaut 24px sur Android (status bar)
+  - vaut 0 sur desktop et anciens téléphones sans encoche
+
+Le calc() ajuste la hauteur totale pour conserver l'espace visible
+de 64px en plus du padding nécessaire.
+*/
+.app-bar-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+  height: calc(64px + env(safe-area-inset-top, 0px)) !important;
+}
+</style>
