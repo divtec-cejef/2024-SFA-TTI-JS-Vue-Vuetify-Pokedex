@@ -14,7 +14,12 @@
         * v-tooltip permet d'afficher une info-bulle au survol du bouton
         * @click permet de naviguer vers la page d'ajout de pokémon
       -->
+      <!--
+      Sur mobile, ce bouton est remplacé par un FAB (Floating Action Button)
+      en bas-droite de l'écran : voir plus bas dans ce composant.
+      -->
       <v-btn
+        v-if="!mobile"
         v-tooltip.bottom="'Ajouter un Pokémon'"
         aria-label="Ajouter un Pokémon"
         class="ml-4"
@@ -73,14 +78,37 @@
         <pokemon-card :pokemon="pokemon" />
       </v-col>
     </v-row>
+
+    <!--
+    FAB (Floating Action Button) mobile pour ajouter un Pokémon.
+      * Visible uniquement sur mobile (sur desktop, le bouton est dans le h1 ci-dessus).
+      * Position fixe en bas-droite — zone du pouce sur mobile.
+      * bottom-calc : 56px (hauteur bottom nav) + env(safe-area-inset-bottom)
+        (home indicator iPhone) + 16px (marge esthétique).
+    -->
+    <v-btn
+      v-if="mobile"
+      aria-label="Ajouter un Pokémon"
+      class="add-pokemon-fab"
+      color="primary"
+      icon="mdi-plus"
+      size="large"
+      @click="$router.push('pokemons/create')"
+    />
   </v-container>
 </template>
 
 <script setup>
   // Importation des dépendances nécessaires
   import { computed, ref } from 'vue' // Importe computed pour créer une propriété calculée
+  import { useDisplay } from 'vuetify' // Hook responsive pour détecter le mobile
   import { usePokemonStore } from '@/stores/pokemonStore' // Importe le magasin Pinia des Pokémons
   import PokemonCard from '@/components/PokemonCard.vue' // Importe le composant de carte des Pokémons
+
+  // useDisplay() expose `mobile` (= true sous le breakpoint md de Vuetify).
+  // Sert à basculer entre le bouton "+" intégré au header (desktop) et le
+  // FAB en bas-droite (mobile, accessible au pouce).
+  const { mobile } = useDisplay()
 
   // Initialisation du magasin Pinia des Pokémons
   const pokemonStore = usePokemonStore()
@@ -122,3 +150,23 @@
   })
 
 </script>
+
+<style scoped>
+/*
+FAB (Floating Action Button) position fixe en bas-droite.
+
+Le calcul du `bottom` empile :
+  - 56px = hauteur de la bottom nav (BottomNav.vue)
+  - env(safe-area-inset-bottom, 0px) = home indicator iPhone
+  - 16px = marge esthétique entre le FAB et la bottom nav
+
+z-index: 4 pour passer au-dessus des cartes mais sous les overlays
+Vuetify (snackbar = 5, dialog = 2400).
+*/
+.add-pokemon-fab {
+  position: fixed;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 16px);
+  right: 16px;
+  z-index: 4;
+}
+</style>
