@@ -9,6 +9,20 @@
 //   $color-pack: false
 // );
 
+/*
+Fond sombre sur <html> et <body>.
+
+Sur Capacitor iOS, la zone du notch / Dynamic Island est dessinée par
+la WebView elle-même : sans bg explicite sur <html>, iOS affiche du
+blanc/gris clair par défaut, ce qui détonne avec le thème dark Vuetify.
+Cette règle garantit que toute zone non couverte par un composant
+(safe areas iOS, transitions de route, splash) reste sombre.
+*/
+html,
+body {
+  background-color: #121212;
+}
+
 
 /* Animation pour une puce ou bouton sélectionné */
 @keyframes selectAnimation {
